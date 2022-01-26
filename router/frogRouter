@@ -1,0 +1,244 @@
+let express = require('express');
+
+let Frog = require('../models/frogModel');
+
+let routes= function(){
+    const frogRouter = express.Router();
+
+//middleWare
+   frogRouter.use( function (req, res, next) {
+            if(req.method == "OPTIONS" || req.headers.accept === "application/json"){
+                res.header("Access-Control-Allow-Origin", "*");
+                res.header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept");
+               console.log("middleware works")
+            next()  
+        } else {
+            res.status(400).send({message: err.message});
+        }
+    }); 
+
+//options for the frogs
+frogRouter.options('/', (req, res) => {
+    res.status(200)
+    .header("Allow", "GET,POST,OPTIONS")
+    .header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    .header("Access-Control-Allow-Origin", "*")
+    .header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+    .send()
+})
+
+//options on detail frog
+frogRouter.options('/:id', (req, res) => {
+    res.status(200)
+    .header("Allow", "GET,OPTIONS,DELETE,PUT")
+    .header("Content-Type", "application/json")
+    .header("Access-Control-Allow-Methods", "GET,OPTIONS,DELETE,PUT")
+    .send()
+})
+
+//create a frog
+frogRouter.post('/', async (req, res) => {
+        const frog = new Frog({ 
+           name  : req.body.name,
+           body : req.body.body,
+           author : req.body.author,
+        })
+
+        try {
+            let postFrog = await frog.save()
+            res.status(201)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+            .json(postFrog)
+        } catch (err) {
+            res.status(400).json({message: err.message});
+        }
+    });
+
+    //get all frogs
+    frogRouter.get('/', async (req, res) => {
+        
+    let frogs = Frog.find({}, (err, frogs) => {
+        
+        try {
+            let start;
+            let limit;
+
+            if (req.query.start && req.query.limit) {
+                start = parseInt(req.query.start);
+                limit = parseInt(req.query.limit);
+            }
+            else
+            {
+                start = 1;
+                limit = frogs.length
+                console.log("No querystrings were given");
+            }
+
+            let totalItems = frogs.length;
+            let totalPages = Math.ceil(frogs.length / limit);
+            
+            let firstPage;
+            let lastPage;
+            let prevPage;
+            let nextPage;
+
+            let currentItems;
+            let currentPage;
+
+            if (totalPages == 1) {
+                firstPage = lastPage = prevPage = nextPage = currentPage = 1;
+                currentItems = frogs.length;
+            }
+
+            else
+            {
+                currentPage = Math.ceil(start / limit);
+                if (currentPage == totalPages) { currentItems = totalItems - ((totalPages-1) * limit) } 
+                    else { currentItems = limit }
+
+                firstPage = 1;
+                lastPage = (totalPages-1) * limit + 1;
+
+                if (currentPage == 1) { prevPage = 1 } 
+                    else { prevPage = start - limit }
+
+                if (currentPage == totalPages) { nextPage = start }
+                    else { nextPage = start + limit }
+                
+            }
+            let frogsCollection = {
+                "items" : [],
+                "_links" : {
+                    "self" : { "href" : "http://" + req.headers.host + "/api/frogs" },
+                    "collection" : { "href" : "http://" + req.headers.host + "/api/frogs" }
+                },
+                "pagination" : {
+                    "currentPage": currentPage,
+                    "currentItems" : currentItems,
+                    "totalPages" : totalPages,
+                    "totalItems" : totalItems,
+                    "_links" : {
+                        "first" : {
+                            "page" : firstPage,
+                            "href" : `http://${req.headers.host}/api/frogs?start=${firstPage}&limit=${limit}`
+                        },
+                        "last" : {
+                            "page" : lastPage,
+                            "href" : `http://${req.headers.host}/api/frogs?start=${lastPage}&limit=${limit}`
+                        },
+                        "previous" : {
+                            "page" : currentPage - 1,
+                            "href" : `http://${req.headers.host}/api/frogs?start=${prevPage}&limit=${limit}`
+                        },
+                        "next" : {
+                            "page" : currentPage + 1,
+                            "href" : `http://${req.headers.host}/api/frogs?start=${nextPage}&limit=${limit}`
+                        }
+                    } 
+                }
+            }
+            let frogsOnPage = [];
+            if (totalPages == 1) {
+                frogsOnPage = frogs
+            } 
+            else{
+                let startSlice = start - 1;
+                let endSlice = start + limit - 1;
+                frogsOnPage = frogs.slice(startSlice, endSlice)
+            }
+
+            for(let frog of frogsOnPage){
+                let frogItem = frog.toJSON()
+
+                frogItem._links = { 
+                    "self" : { "href" : "http://" + req.headers.host + "/api/frogs/" + frogItem._id },
+                    "collection" : { "href" : "http://" + req.headers.host + "/api/frogs" }
+                 }
+
+                frogsCollection.items.push(frogItem)
+            }
+           
+            res.send(frogsCollection).json;
+            
+        } catch(err) {
+            
+            res.status(500).json({message: err.message});
+        }
+    })
+})
+
+//details
+frogRouter.get('/:id', async (req, res) => {
+    
+    try {
+
+         let frog = await Frog.findById(req.params.id);
+
+         let frogJson = frog.toJSON()
+
+         frogJson._links = {
+                "self" : { "href" : "http://" + req.headers.host + "/api/frogs/" + frog._id  },
+                "collection" : { "href" : "http://" + req.headers.host + "/api/frogs" }
+            }
+    
+        res.status(200).json(frogJson); 
+        } catch(err) {
+        res.status(404).json({message: err.message});
+        }
+});
+
+    //update one frog
+ frogRouter.put('/:id', getFrog, async (req, res) => {
+    if (req.body.name != null){
+        res.frog.name = req.body.name;
+     }
+
+    if (req.body.body != null){
+    res.frog.body = req.body.body;
+    }
+
+    if (req.body.author != null){
+    res.frog.author = req.body.author;
+    }
+    try {
+       
+          const updatedFrog = await res.frog.save();
+          console.log(updatedFrog);
+          res.status(200).json(updatedFrog);
+        
+    } catch(err){
+       res.status(400).json({ message: err.message });
+    } 
+})
+
+
+//delete one frog
+frogRouter.delete('/:id', getFrog, async (req, res) => {
+    try{
+        await res.frog.remove();
+        res.status(204).json({ message : "Frog deleted"})
+    } catch(err){
+        res.status(500).json({ message : err.message });
+    }
+})
+
+async function getFrog(req, res, next){
+    let frog 
+         try {
+         frog = await Frog.findById(req.params.id);
+             if(frog === null){
+                  return res.status(500).json({ message: "Cannot find frog." });
+                }
+            }catch(err){
+                return res.status(400).json({ message: err.message })
+            }
+    
+        res.frog = frog;
+        next()
+        };
+
+        return frogRouter;
+};
+
+module.exports = routes;
